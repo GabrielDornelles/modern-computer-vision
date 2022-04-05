@@ -1,10 +1,12 @@
 # Those layers are meant to be used in from notebook 4 beyond
 # @Author: Gabriel Dornelles Monteiro
+from operator import truediv
 import numpy as np
 from im2col_cython import col2im_cython, im2col_cython
 from airi_layer import AiriLayer
 #TODO: Weight Regularization for Conv2D, SGD+Momentum, Adam, MaxPool2D
-
+#TODO: I REALLY FORGOT TO IMLPEMENT ZERO GRAD LOL, I dont know how it was working for linear layers.
+#TODO: Linear and Relu backwards are working, but Conv2D needs a numerical grad check (maybe is incorrect)
 
 class Softmax(AiriLayer):
 
@@ -14,12 +16,14 @@ class Softmax(AiriLayer):
     def __call__(self, x):
         return self.forward(x)
 
-    def forward(self, scores):
+    def forward(self, scores, grad = True):
         self.batch_size = scores.shape[0]
         scores -= np.max(scores, axis=1, keepdims=True)
         scores_exp = np.exp(scores)
-        self.softmax_matrix = scores_exp / np.sum(scores_exp, axis=1, keepdims=True) 
-        return self.softmax_matrix
+        softmax_matrix = scores_exp / np.sum(scores_exp, axis=1, keepdims=True) 
+        if grad:
+            self.softmax_matrix = softmax_matrix
+        return softmax_matrix
     
     def NLLloss(self, y):
         loss = np.sum(-np.log(self.softmax_matrix[np.arange(self.batch_size), y]))
@@ -33,7 +37,10 @@ class Softmax(AiriLayer):
             self.softmax_matrix[np.arange(self.batch_size) ,y] -= 1
             self.softmax_matrix /= self.batch_size
             return self.softmax_matrix
-        raise NotImplementedError("Unsupported Loss Function") 
+        raise NotImplementedError("Unsupported Loss Function")
+    
+    def zero_grad(self):
+        self.softmax_matrix = 0
  
 
 class Flatten(AiriLayer):
@@ -44,8 +51,9 @@ class Flatten(AiriLayer):
     def __call__(self, x):
         return self.forward(x)
 
-    def forward(self, x):
-        self.old_shape = x.shape
+    def forward(self, x, grad = True):
+        if grad:
+            self.old_shape = x.shape
         return np.reshape(x, (x.shape[0], -1))
     
     def backward(self, dout):
@@ -53,20 +61,28 @@ class Flatten(AiriLayer):
     
     def update(self, **kwargs):
         pass
+    
+    def zero_grad(self):
+        pass
 
 
 class Conv2D(AiriLayer):
 
-    def __init__(self, in_channels, num_filters, filter_size, stride, pad, std):
+    def __init__(self, in_channels, num_filters, filter_size, stride, pad, reg=0.0, custom_w = None, custom_b = None):
+        self.reg = reg
         self.stride = stride
         self.pad = pad
-        self.conv = std * np.random.randn(num_filters, in_channels, filter_size, filter_size)
-        self.bias = np.zeros(num_filters)
+        if (custom_w is not None) and (custom_b is not None):
+            self.conv = custom_w
+            self.bias = custom_b
+        else:
+            self.conv = np.random.randn(num_filters, in_channels, filter_size, filter_size) # * std
+            self.bias = np.zeros(num_filters)
     
     def __call__(self, x):
         return self.forward(x)
     
-    def forward(self, x):
+    def forward(self, x, grad = True):
         N, C, H, W = x.shape
         num_filters, _, filter_height, filter_width = self.conv.shape
         stride, pad = self.stride, self.pad
@@ -90,7 +106,8 @@ class Conv2D(AiriLayer):
         out = res.reshape(w.shape[0], out.shape[2], out.shape[3], x.shape[0])
         out = out.transpose(3, 0, 1, 2)
 
-        self.cache = (x, w, b, x_cols)
+        if grad:
+            self.cache = (x, w, b, x_cols)
         return out
 
     def backward(self, dout):
@@ -102,6 +119,7 @@ class Conv2D(AiriLayer):
         num_filters, _, filter_height, filter_width = w.shape 
         dout_reshaped = dout.transpose(1, 2, 3, 0).reshape(num_filters, -1)
         self.dW = dout_reshaped.dot(x_cols.T).reshape(w.shape)
+        self.dW += self.reg * 2 * self.conv 
 
         dx_cols = w.reshape(num_filters, -1).T.dot(dout_reshaped)
         # dx = col2im_indices(dx_cols, x.shape, filter_height, filter_width, pad, stride)
@@ -111,8 +129,16 @@ class Conv2D(AiriLayer):
         return dx #, dw, 
     
     def update(self, lr=1e-6):
+        # self.conv -= lr * self.dW
+        # self.velocity = 0.95 * self.velocity -lr * self.dW
+        # self.conv += self.velocity
+        # self.bias -= lr * self.db
         self.conv -= lr * self.dW
         self.bias -= lr * self.db
+    
+    def zero_grad(self):
+        self.dW = 0
+        self.dB = 0
 
 
 class Relu(AiriLayer):
@@ -123,8 +149,9 @@ class Relu(AiriLayer):
     def __call__(self, x):
         self.forward(x)
     
-    def forward(self, x):
-        self.x = x
+    def forward(self, x, grad = True):
+        if grad:
+            self.x = x
         return np.maximum(0, x)
     
     def backward(self, dout):
@@ -132,6 +159,9 @@ class Relu(AiriLayer):
     
     def update(self, **kwargs):
         pass
+    
+    def zero_grad(self):
+       pass
 
 
 class LinearRelu(AiriLayer):
@@ -166,13 +196,17 @@ class LinearRelu(AiriLayer):
         self.w -= lr * self.dW
         if self.bias:
             self.b -= lr * self.dB
+    
+    def zero_grad(self):
+        self.dW = 0
+        self.dB = 0
 
 
 class Linear(AiriLayer):
 
     def __init__(self, std=1e-4, input_size=3072, hidden_size=10, reg=1e3, bias = True):
         self.bias = bias
-        self.w = std * np.random.randn(input_size, hidden_size)
+        self.w =  np.random.randn(input_size, hidden_size) * std
         self.b = np.zeros(hidden_size) if bias else None
         self.reg = reg
     
@@ -195,3 +229,6 @@ class Linear(AiriLayer):
         if self.bias:
             self.b -= lr * self.dB
     
+    def zero_grad(self):
+        self.dW = 0
+        self.dB = 0

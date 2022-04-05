@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 from layers import *
 from im2col_cython import col2im_cython, im2col_cython
 from torchvision.datasets import CIFAR10
+from rich.progress import track
+import dill as pickle
 
 classes = ['plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
 
@@ -32,16 +34,17 @@ val_images -= mean_image
 # train_images shape: (50000, 3072)
 print("Pre processed images")
 
-class ThreeLayerConvNet:
+class DemoConvNet:
     def __init__(self) -> None:
-        # Build the model here as a dictionary, weights are differentiable blocks
-        self.reg = 0.001
-        self.lr = 0.001
+      
+        self.reg = 0.0
+        self.lr = 2.5e-4 #0.001
 
+        # Dont optmize properly yet
         self.model = [
-            Conv2D(in_channels=3, num_filters=6,filter_size=5, stride=1, pad=0, std=1e-3),
+            Conv2D(in_channels=3, num_filters=6,filter_size=5, stride=1, pad=0),
             Relu(),
-            Conv2D(in_channels=6, num_filters=16, filter_size=5, stride=1, pad=0, std=1e-3),
+            Conv2D(in_channels=6, num_filters=16, filter_size=5, stride=1, pad=0),
             Relu(),
             Flatten(),
             Linear(input_size=9216, hidden_size=120, reg=self.reg, std=1e-3),
@@ -51,14 +54,17 @@ class ThreeLayerConvNet:
             Linear(input_size=84, hidden_size=10, reg=self.reg, std=1e-3),
             Softmax()
         ]
+    
+    def __call__(self, x):
+        return self.forward(x)
 
-    def forward(self, x, verbose= False):
+    def forward(self, x, verbose= False, grad = True):
         self.batch_size = x.shape[0]
-        #print(x.shape)
+       
         x = x.transpose(0,3,1,2) # Reshape to N C H W 
         for layer in self.model:
             if verbose: print(f"Forwarding Layer: {layer}, x shape: {x.shape}")
-            x = layer.forward(x)
+            x = layer.forward(x, grad = grad)
            
         return x
     
@@ -68,20 +74,57 @@ class ThreeLayerConvNet:
         for layer in reversed(self.model[:-1]):
             dout = layer.backward(dout)
             layer.update(lr=self.lr)
+            layer.zero_grad()
         return loss
 
+
+def accuracy(model, x, y):
+    x = model.forward(x, grad=False)
+    y_pred = np.argmax(x, axis=1)
+    return (y_pred == y).mean()
+
 if __name__ == "__main__":
-    model = ThreeLayerConvNet()
-    epoches = 30
+
+    ## Sanity check: Overfit small set of data: Working
+    # model = DemoConvNet()
+    # epoches = 250
+    # num_train = 100 
+    # batch_size = 50
+    # X = train_images[:100]
+    # y = train_targets[:100]
+    # for i in range(epoches):
+    #     batch_indices = np.random.choice(num_train, batch_size)
+    #     X_batch = X[batch_indices]
+    #     y_batch = y[batch_indices]
+    #     model.forward(X_batch)
+    #     loss = model.backward(y_batch)
+    #     print(f"Loss for epoch {i}: {loss}")
+
+    # Training
+    model = DemoConvNet()
+    with open('DemoConvNet.airi', 'wb') as f:
+        pickle.dump(model,f)
+    epoches = 100
     num_train = train_images.shape[0]
     batch_size = 256
     X = train_images
     y = train_targets
+
     for i in range(epoches):
-        batch_indices = np.random.choice(num_train, batch_size)
-        X_batch = X[batch_indices]
-        y_batch = y[batch_indices]
-        model.forward(X_batch, verbose=False)
-        loss = model.backward(y_batch)
-        if i%1==0:
-            print(f"Loss at epoch {i}: {loss}")
+        # iterate the whole dataset in batches
+        for batch in track(range(1, int(num_train/batch_size)), description="Training..."):
+            batch_indices = np.random.choice(num_train, batch_size)
+            X_batch = X[batch_indices]
+            y_batch = y[batch_indices]
+            model.forward(X_batch)
+            loss = model.backward(y_batch)
+        print(f"Loss for epoch {i}: {loss}")
+        acc = accuracy(model, val_images, val_targets)
+        print(f"Val acc for epoch {i}: {acc}")
+    # Save model
+    with open('DemoConvNet.airi', 'wb') as f:
+        pickle.dump(model,f)
+    
+    # Load
+    # with open('DemoConvNet.airi', 'rb') as f:
+    #   y = pickle.load(f)
