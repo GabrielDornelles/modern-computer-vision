@@ -1,12 +1,10 @@
-# Those layers are meant to be used in from notebook 4 beyond
-# @Author: Gabriel Dornelles Monteiro
-from operator import truediv
 import numpy as np
+import math
 from im2col_cython import col2im_cython, im2col_cython
 from airi_layer import AiriLayer
-#TODO: Weight Regularization for Conv2D, SGD+Momentum, Adam, MaxPool2D
-#TODO: I REALLY FORGOT TO IMLPEMENT ZERO GRAD LOL, I dont know how it was working for linear layers.
-#TODO: Linear and Relu backwards are working, but Conv2D needs a numerical grad check (maybe is incorrect)
+
+# Those layers are meant to be used in from notebook 4 beyond
+# @Author: Gabriel Dornelles Monteiro
 
 class Softmax(AiriLayer):
 
@@ -28,19 +26,17 @@ class Softmax(AiriLayer):
     def NLLloss(self, y):
         loss = np.sum(-np.log(self.softmax_matrix[np.arange(self.batch_size), y]))
         loss /= self.batch_size
-        # TODO: Regularization
         return loss
     
     def backward(self, y):
         if self.loss_function == "NLL":
-            
             self.softmax_matrix[np.arange(self.batch_size) ,y] -= 1
             self.softmax_matrix /= self.batch_size
             return self.softmax_matrix
         raise NotImplementedError("Unsupported Loss Function")
     
     def zero_grad(self):
-        self.softmax_matrix = 0
+        self.softmax_matrix = None
  
 
 class Flatten(AiriLayer):
@@ -63,12 +59,14 @@ class Flatten(AiriLayer):
         pass
     
     def zero_grad(self):
-        pass
+        self.old_shape = None
 
 
 class Conv2D(AiriLayer):
 
     def __init__(self, in_channels, num_filters, filter_size, stride, pad, reg=0.0, custom_w = None, custom_b = None):
+        self.config = None
+        self.config_b = None
         self.reg = reg
         self.stride = stride
         self.pad = pad
@@ -76,7 +74,10 @@ class Conv2D(AiriLayer):
             self.conv = custom_w
             self.bias = custom_b
         else:
-            self.conv = np.random.randn(num_filters, in_channels, filter_size, filter_size) # * std
+            # Pytorch like conv init: https://github.com/pytorch/pytorch/blob/master/torch/nn/modules/conv.py#L40
+            k = in_channels * np.prod((filter_size, filter_size))
+            unif = np.random.uniform(-1/math.sqrt(k), 1/math.sqrt(k))
+            self.conv = np.random.randn(num_filters, in_channels, filter_size, filter_size) * unif
             self.bias = np.zeros(num_filters)
     
     def __call__(self, x):
@@ -99,7 +100,6 @@ class Conv2D(AiriLayer):
         
         out = np.zeros((N, num_filters, out_height, out_width), dtype=x.dtype)
 
-        # x_cols = im2col_indices(x, w.shape[2], w.shape[3], pad, stride)
         x_cols = im2col_cython(x, w.shape[2], w.shape[3], pad, stride)
         res = w.reshape((w.shape[0], -1)).dot(x_cols) + b.reshape(-1, 1)
 
@@ -122,23 +122,19 @@ class Conv2D(AiriLayer):
         self.dW += self.reg * 2 * self.conv 
 
         dx_cols = w.reshape(num_filters, -1).T.dot(dout_reshaped)
-        # dx = col2im_indices(dx_cols, x.shape, filter_height, filter_width, pad, stride)
         dx = col2im_cython(dx_cols, x.shape[0], x.shape[1], x.shape[2], x.shape[3],
                         filter_height, filter_width, pad, stride)
 
-        return dx #, dw, 
+        return dx  
     
-    def update(self, lr=1e-6):
-        # self.conv -= lr * self.dW
-        # self.velocity = 0.95 * self.velocity -lr * self.dW
-        # self.conv += self.velocity
-        # self.bias -= lr * self.db
-        self.conv -= lr * self.dW
-        self.bias -= lr * self.db
+    def update(self):
+        self.bias, self.config_b = adam(self.bias, self.db, config=self.config_b)
+        self.conv, self.config = adam(self.conv, self.dW, config=self.config)
     
     def zero_grad(self):
-        self.dW = 0
-        self.dB = 0
+        self.dW = None
+        self.dB = None
+        self.cache = None
 
 
 class Relu(AiriLayer):
@@ -161,12 +157,12 @@ class Relu(AiriLayer):
         pass
     
     def zero_grad(self):
-       pass
+        self.x = None
 
 
 class LinearRelu(AiriLayer):
     """
-    Linear + Relu activation block
+    Linear + Relu activation block. Usable, but not updated.
     """
 
     def __init__(self, std=1e-4, input_size=3072, hidden_size=10, reg=1e3, bias = True):
@@ -203,9 +199,12 @@ class LinearRelu(AiriLayer):
 
 
 class Linear(AiriLayer):
-
-    def __init__(self, std=1e-4, input_size=3072, hidden_size=10, reg=1e3, bias = True):
+    # TODO: Better initialization with std being like stdv = 1. / math.sqrt(self.weight.size(1))
+    def __init__(self, input_size=3072, hidden_size=10, reg=1e3, bias = True):
+        self.config = None
+        self.config_b = None
         self.bias = bias
+        std = 1./ math.sqrt(input_size)
         self.w =  np.random.randn(input_size, hidden_size) * std
         self.b = np.zeros(hidden_size) if bias else None
         self.reg = reg
@@ -224,11 +223,54 @@ class Linear(AiriLayer):
         self.dW += self.reg * 2 * self.w 
         return dout@self.w.T 
         
-    def update(self, lr=1e-6):
-        self.w -= lr * self.dW
-        if self.bias:
-            self.b -= lr * self.dB
+    def update(self):
+        self.b, self.config_b = adam(self.b, self.dB, config=self.config_b)
+        self.w, self.config = adam(self.w, self.dW, config=self.config)
     
     def zero_grad(self):
-        self.dW = 0
-        self.dB = 0
+        self.dW = None
+        self.dB = None
+        self.x = None
+
+
+def adam(w, dw, config=None):
+    """
+    ADAptative Moment estimtion
+    From cs231n, source: https://github.com/jariasf/CS231n/blob/master/assignment2/cs231n/optim.py
+    my notes: https://github.com/GabrielDornelles/softmax-classifier/blob/main/Cs231n%20Class%206%20-%20Backpropagation%20Techn.md
+    Uses the Adam update rule, which incorporates moving averages of both the
+    gradient and its square and a bias correction term.
+    config format:
+    - learning_rate: Scalar learning rate.
+    - beta1: Decay rate for moving average of first moment of gradient.
+    - beta2: Decay rate for moving average of second moment of gradient.
+    - epsilon: Small scalar used for smoothing to avoid dividing by zero.
+    - m: Moving average of gradient.
+    - v: Moving average of squared gradient.
+    - t: Iteration number.
+    """
+    if config is None: config = {}
+    config.setdefault('learning_rate', 1e-4)
+    config.setdefault('beta1', 0.9)
+    config.setdefault('beta2', 0.999)
+    config.setdefault('epsilon', 1e-8)
+    config.setdefault('m', np.zeros_like(w))
+    config.setdefault('v', np.zeros_like(w))
+    config.setdefault('t', 0)
+
+    next_w = None
+   
+    eps, learning_rate = config['epsilon'], config['learning_rate']
+    beta1, beta2 = config['beta1'], config['beta2']
+    m, v, t = config['m'], config['v'], config['t']
+    # Adam
+    t = t + 1
+    m = beta1 * m + (1 - beta1) * dw          # momentum
+    mt = m / (1 - beta1**t)                   # bias correction
+    v = beta2 * v + (1 - beta2) * (dw * dw)   # RMSprop
+    vt = v / (1 - beta2**t)                   # bias correction
+    next_w = w - learning_rate * mt / (np.sqrt(vt) + eps)
+    # update values
+    config['m'], config['v'], config['t'] = m, v, t
+
+    return next_w, config

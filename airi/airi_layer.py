@@ -13,3 +13,6 @@ class AiriLayer:
     
     def update(self, **kwargs):
         pass
+
+    def zero_grad(self, **kwargs):
+        pass

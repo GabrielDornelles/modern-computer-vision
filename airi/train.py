@@ -31,27 +31,24 @@ train_images -= mean_image
 
 val_images = val_images.astype(float)
 val_images -= mean_image
-# train_images shape: (50000, 3072)
-print("Pre processed images")
+print("Pre-processed cifar-10 Images")
 
 class DemoConvNet:
     def __init__(self) -> None:
       
         self.reg = 0.0
-        self.lr = 2.5e-4 #0.001
 
-        # Dont optmize properly yet
         self.model = [
-            Conv2D(in_channels=3, num_filters=6,filter_size=5, stride=1, pad=0),
+            Conv2D(in_channels=3, num_filters=16,filter_size=5, stride=1, pad=0),
             Relu(),
-            Conv2D(in_channels=6, num_filters=16, filter_size=5, stride=1, pad=0),
+            Conv2D(in_channels=16, num_filters=16, filter_size=5, stride=1, pad=0),
             Relu(),
             Flatten(),
-            Linear(input_size=9216, hidden_size=120, reg=self.reg, std=1e-3),
+            Linear(input_size=9216, hidden_size=120, reg=self.reg),
             Relu(),
-            Linear(input_size=120, hidden_size=84, reg=self.reg, std=1e-3),
+            Linear(input_size=120, hidden_size=84, reg=self.reg),
             Relu(),
-            Linear(input_size=84, hidden_size=10, reg=self.reg, std=1e-3),
+            Linear(input_size=84, hidden_size=10, reg=self.reg),
             Softmax()
         ]
     
@@ -73,7 +70,7 @@ class DemoConvNet:
         dout = self.model[-1].backward(y)
         for layer in reversed(self.model[:-1]):
             dout = layer.backward(dout)
-            layer.update(lr=self.lr)
+            layer.update()
             layer.zero_grad()
         return loss
 
@@ -85,7 +82,7 @@ def accuracy(model, x, y):
 
 if __name__ == "__main__":
 
-    ## Sanity check: Overfit small set of data: Working
+    # # Sanity check: Overfit small set of data: Working
     # model = DemoConvNet()
     # epoches = 250
     # num_train = 100 
@@ -101,15 +98,19 @@ if __name__ == "__main__":
     #     print(f"Loss for epoch {i}: {loss}")
 
     # Training
+
     model = DemoConvNet()
-    with open('DemoConvNet.airi', 'wb') as f:
-        pickle.dump(model,f)
-    epoches = 100
+
+    ## Load model or checkpoint
+    # with open('DemoConvNet.airi', 'rb') as f:
+    #     model = pickle.load(f)
+    
+    epoches = 20
     num_train = train_images.shape[0]
-    batch_size = 256
+    batch_size = 128
     X = train_images
     y = train_targets
-
+    best_acc = 0.0
     for i in range(epoches):
         # iterate the whole dataset in batches
         for batch in track(range(1, int(num_train/batch_size)), description="Training..."):
@@ -119,12 +120,15 @@ if __name__ == "__main__":
             model.forward(X_batch)
             loss = model.backward(y_batch)
         print(f"Loss for epoch {i}: {loss}")
-        acc = accuracy(model, val_images, val_targets)
+        acc = accuracy(model, val_images[:1000], val_targets[:1000])
         print(f"Val acc for epoch {i}: {acc}")
+
+        if acc > best_acc:
+            best_acc = acc
+            best_model = model
+
     # Save model
     with open('DemoConvNet.airi', 'wb') as f:
-        pickle.dump(model,f)
+        pickle.dump(best_model,f)
     
-    # Load
-    # with open('DemoConvNet.airi', 'rb') as f:
-    #   y = pickle.load(f)
+
