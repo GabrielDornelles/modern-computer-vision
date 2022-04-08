@@ -51,6 +51,8 @@ class DemoConvNet:
             Linear(input_size=84, hidden_size=10, reg=self.reg),
             Softmax()
         ]
+
+
     
     def __call__(self, x):
         return self.forward(x)
@@ -101,7 +103,7 @@ if __name__ == "__main__":
 
     model = DemoConvNet()
 
-    ## Load model or checkpoint
+    # Load model or checkpoint
     # with open('DemoConvNet.airi', 'rb') as f:
     #     model = pickle.load(f)
     
@@ -128,7 +130,7 @@ if __name__ == "__main__":
             best_model = model
 
     # Save model
-    with open('DemoConvNet.airi', 'wb') as f:
+    with open('DemoConvNet7x7.airi', 'wb') as f:
         pickle.dump(best_model,f)
     
 
