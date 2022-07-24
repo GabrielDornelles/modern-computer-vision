@@ -3,7 +3,7 @@ from layers import *
 from rich import print
 
 # Grad check from cs231n
-# TODO: Pytest for every layer
+# TODO: Pytest for every layer (Im very lazy since this library is not used outside this course, I tested what I wanted to check)
 
 def eval_numerical_gradient_array(f, x, df, h=1e-5):
     """

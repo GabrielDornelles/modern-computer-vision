@@ -2,7 +2,11 @@
 -----
 AIRI is a short library implemented by me for educational purposes.
 
-It contains vision AI blocks (Linear, ReLU, Softmax, Conv2D, flatten) with an AutoGrad like Api. Its built on top of numpy.
+It contains vision AI blocks (Linear, ReLU, Softmax, Conv2D, flatten) with an AutoGrad like Api. 
+
+Its built on top of numpy.
+
+
 # Setup
 To install Cython to perform Conv forward and backward (from cs231n) run the following command:
 
@@ -12,7 +16,7 @@ python3 setup.py build_ext --inplace
 # About 
 - Linear and Conv2D layers are Kaiming initialized
 - Adam is used as the optimizer
-- It's modular, but some parts aren't (optimizers are not modular yet)
+- It's modular, but some parts aren't (optimizers are not)
 
 # Example
 

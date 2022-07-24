@@ -4,3 +4,7 @@ cifar-10-batches-py/
 __pycache__/
 im2col_cython.c
 im2col_cython.cpython-38-x86_64-linux-gnu.so
+*.png
+*.jpg
+*.airi
+*.pth

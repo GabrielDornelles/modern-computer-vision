@@ -1,10 +1,10 @@
+# @Author: Gabriel Dornelles Monteiro
 import numpy as np
 import math
 from im2col_cython import col2im_cython, im2col_cython
 from airi_layer import AiriLayer
 
-# Those layers are meant to be used in from notebook 4 beyond
-# @Author: Gabriel Dornelles Monteiro
+# Computer vision common layers with forward/backward pass => Conv2D, Flatten, Softmax, Linear, ReLU
 
 class Softmax(AiriLayer):
 
@@ -63,7 +63,7 @@ class Flatten(AiriLayer):
 
 
 class Conv2D(AiriLayer):
-
+    # Kaiming initialized
     def __init__(self, in_channels, num_filters, filter_size, stride, pad, reg=0.0, custom_w = None, custom_b = None):
         self.config = None
         self.config_b = None
@@ -199,7 +199,7 @@ class LinearRelu(AiriLayer):
 
 
 class Linear(AiriLayer):
-    # TODO: Better initialization with std being like stdv = 1. / math.sqrt(self.weight.size(1))
+    # Kaiming initialized
     def __init__(self, input_size=3072, hidden_size=10, reg=1e3, bias = True):
         self.config = None
         self.config_b = None
