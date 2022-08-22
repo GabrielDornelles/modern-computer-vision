@@ -3,3 +3,4 @@ matplotlib==3.3.4
 torchvision==0.13.0
 rich==12.4.1
 dill==0.3.5.1
+Cython==0.29.32

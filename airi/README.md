@@ -8,7 +8,7 @@ Its built on top of numpy.
 
 
 # Setup
-To install Cython to perform Conv forward and backward (from cs231n) run the following command:
+To install Cython to perform Conv forward and backward (from cs231n) run the following command (after installing cython or requirements):
 
 ```sh
 python3 setup.py build_ext --inplace
