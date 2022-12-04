@@ -31,6 +31,8 @@ jobs:
           ls ${{ github.workspace }}
       - name: Tests
         run: |
+          cd airi/
+          echo "$PWD"
           pytest tests.py
           echo "All tests passed."
       - run: echo "This job's status is ${{ job.status }}."
