@@ -8,3 +8,6 @@ im2col_cython.cpython-38-x86_64-linux-gnu.so
 *.jpg
 *.airi
 *.pth
+cats_dataset_splitted/
+Gano-Cat-Breeds-V1_1/
+airi/im2col_cython.cpython-310-x86_64-linux-gnu.so

@@ -8,7 +8,7 @@ jobs:
         run: |
           echo "The job was automatically triggered by ${{ github.event_name }} event."
           echo "Running on a ${{ runner.os }}"
-          echo "Workflow is running on the branch ${{ github.ref }}"
+          echo "Workflow is running on the branch ${{ github.ref }}."
           python --version
           pip --version
           
@@ -24,7 +24,13 @@ jobs:
           pip3 install -r requirements.txt
           python3 setup.py build_ext --inplace
           echo "Sucessfully installed notebooks and Airi packages"
+          wget --no-check-certificate 'https://docs.google.com/uc?export=download&id=1x_K9nT_PPVvQ4R8TsrTMq3RyoQUKmaeX' -O DemoConvNetv2.airi
+          echo "Downloaded Airi weights for DemoConvnet."
       - name: List files in the repository
         run: |
           ls ${{ github.workspace }}
+      - name: Tests
+        run: |
+          pytest tests.py
+          echo "All tests passed."
       - run: echo "This job's status is ${{ job.status }}."
